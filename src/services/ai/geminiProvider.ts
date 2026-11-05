@@ -5,13 +5,44 @@ import {
   CoinIdentificationResult,
   CoinIdentificationResultSchema,
 } from './types';
+import { imageProcessor } from '../image/imageProcessor';
+
+export class GeminiAuthError extends Error {
+  constructor(message = 'Gemini API key is invalid or unauthorized (401). Please verify your API key in Settings.') {
+    super(message);
+    this.name = 'GeminiAuthError';
+  }
+}
+
+export class GeminiRateLimitError extends Error {
+  constructor(message = 'Gemini API rate limit or quota exceeded (429). Please wait a moment before analyzing another coin.') {
+    super(message);
+    this.name = 'GeminiRateLimitError';
+  }
+}
+
+export class GeminiServiceError extends Error {
+  constructor(message: string, public readonly status?: number) {
+    super(message);
+    this.name = 'GeminiServiceError';
+  }
+}
+
+export class GeminiParsingError extends Error {
+  constructor(message: string, public readonly rawText?: string) {
+    super(message);
+    this.name = 'GeminiParsingError';
+  }
+}
 
 export class GeminiCoinIdentificationProvider implements CoinIdentificationProvider {
   providerName = 'Google Gemini 2.5 Flash Multimodal Vision API';
   private apiKey: string;
+  private timeoutMs: number;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, timeoutMs = 25000) {
     this.apiKey = apiKey;
+    this.timeoutMs = timeoutMs;
   }
 
   setApiKey(key: string) {
@@ -19,8 +50,8 @@ export class GeminiCoinIdentificationProvider implements CoinIdentificationProvi
   }
 
   async identify(input: IdentificationInput): Promise<CoinIdentificationResult> {
-    if (!this.apiKey) {
-      throw new Error(
+    if (!this.apiKey || !this.apiKey.trim()) {
+      throw new GeminiAuthError(
         'Gemini API Key is not configured. Please enter your Gemini API key in Settings or switch to the Sandbox Provider.'
       );
     }
@@ -88,10 +119,12 @@ Follow strict numismatic rules:
       });
     }
 
-    // Convert obverse image to inline base64
+    // Downscale obverse image for fast network transmission & memory safety
+    const optimizedObverseUri = await imageProcessor.prepareForInference(input.obverseImageUri);
+
     try {
-      if (input.obverseImageUri.startsWith('data:')) {
-        const [meta, data] = input.obverseImageUri.split(',');
+      if (optimizedObverseUri.startsWith('data:')) {
+        const [meta, data] = optimizedObverseUri.split(',');
         const mimeType = meta.split(':')[1]?.split(';')[0] || 'image/jpeg';
         parts.push({
           inlineData: {
@@ -100,7 +133,7 @@ Follow strict numismatic rules:
           },
         });
       } else {
-        const base64Obverse = await FileSystem.readAsStringAsync(input.obverseImageUri, {
+        const base64Obverse = await FileSystem.readAsStringAsync(optimizedObverseUri, {
           encoding: 'base64',
         });
         parts.push({
@@ -113,8 +146,9 @@ Follow strict numismatic rules:
 
       // Convert reverse image if provided
       if (input.reverseImageUri) {
-        if (input.reverseImageUri.startsWith('data:')) {
-          const [meta, data] = input.reverseImageUri.split(',');
+        const optimizedReverseUri = await imageProcessor.prepareForInference(input.reverseImageUri);
+        if (optimizedReverseUri.startsWith('data:')) {
+          const [meta, data] = optimizedReverseUri.split(',');
           const mimeType = meta.split(':')[1]?.split(';')[0] || 'image/jpeg';
           parts.push({
             inlineData: {
@@ -123,7 +157,7 @@ Follow strict numismatic rules:
             },
           });
         } else {
-          const base64Reverse = await FileSystem.readAsStringAsync(input.reverseImageUri, {
+          const base64Reverse = await FileSystem.readAsStringAsync(optimizedReverseUri, {
             encoding: 'base64',
           });
           parts.push({
@@ -135,42 +169,90 @@ Follow strict numismatic rules:
         }
       }
     } catch (readErr) {
-      throw new Error(`Failed to read coin photograph file: ${(readErr as Error).message}`);
+      throw new GeminiServiceError(
+        `Failed to process coin photograph for AI identification: ${(readErr as Error).message}`
+      );
     }
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.apiKey}`;
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts,
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-        },
-      }),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts,
+            },
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+          },
+        }),
+        signal: controller.signal,
+      });
+    } catch (fetchErr: any) {
+      if (fetchErr.name === 'AbortError') {
+        throw new GeminiServiceError(`Gemini API request timed out after ${this.timeoutMs / 1000} seconds. Check your internet connection.`);
+      }
+      throw new GeminiServiceError(`Network error communicating with Gemini API: ${fetchErr.message}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    // Detailed HTTP status handling
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Gemini API error (${response.status}): ${errText}`);
+      if (response.status === 401 || response.status === 403) {
+        throw new GeminiAuthError(`Gemini API key is invalid or unauthorized (${response.status}): ${errText}`);
+      }
+      if (response.status === 429) {
+        throw new GeminiRateLimitError(`Gemini API rate limit or quota exceeded (429). Please wait before trying again.`);
+      }
+      if (response.status >= 500) {
+        throw new GeminiServiceError(`Gemini vision service is temporarily unavailable (${response.status}). Please try again shortly.`, response.status);
+      }
+      throw new GeminiServiceError(`Gemini API error (${response.status}): ${errText}`, response.status);
     }
 
-    const data = await response.json();
+    let data: any;
+    try {
+      data = await response.json();
+    } catch (jsonErr: any) {
+      throw new GeminiParsingError(`Failed to parse Gemini response envelope as JSON: ${jsonErr.message}`);
+    }
+
     const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
     if (!candidateText) {
-      throw new Error('No identification response received from Gemini.');
+      throw new GeminiParsingError('No identification candidates received from Gemini API.', JSON.stringify(data));
     }
 
-    const parsedJson = JSON.parse(candidateText);
-    return CoinIdentificationResultSchema.parse(parsedJson);
+    let parsedJson: any;
+    try {
+      parsedJson = JSON.parse(candidateText);
+    } catch (parseErr: any) {
+      throw new GeminiParsingError(
+        `Gemini returned malformed non-JSON text: ${parseErr.message}`,
+        candidateText
+      );
+    }
+
+    const validationResult = CoinIdentificationResultSchema.safeParse(parsedJson);
+    if (!validationResult.success) {
+      throw new GeminiParsingError(
+        `Gemini numismatic identification schema validation failed: ${validationResult.error.message}`,
+        candidateText
+      );
+    }
+
+    return validationResult.data;
   }
 }

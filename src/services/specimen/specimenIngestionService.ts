@@ -5,6 +5,8 @@ import { conditionRepository } from '../../db/repositories/conditionRepository';
 import { identificationRepository } from '../../db/repositories/identificationRepository';
 import { tagRepository } from '../../db/repositories/tagRepository';
 import { imageStorage } from '../storage/imageStorage';
+import { imageProcessor, ProcessedCoinImages } from '../image/imageProcessor';
+import { getDatabase } from '../../db/client';
 import { valuationEngine } from '../valuation/valuationEngine';
 import { coinGradingService } from '../ai/gradingProvider';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -89,15 +91,19 @@ export class SpecimenIngestionService {
 
     const currentCurrency = useSettingsStore.getState().currency;
 
-    // 1. Persist images to non-volatile local storage
+    // 1. Process and persist images (Preserves untouched original while generating inference & thumbnail tiers)
     let persistedObverse: string | null = null;
     let persistedReverse: string | null = null;
+    let obvProcessed: ProcessedCoinImages | null = null;
+    let revProcessed: ProcessedCoinImages | null = null;
 
     if (obverseImageUri) {
-      persistedObverse = await imageStorage.persistImage(obverseImageUri, 'obverse');
+      obvProcessed = await imageProcessor.processAndPersist(obverseImageUri, 'obverse');
+      persistedObverse = obvProcessed.originalPath;
     }
     if (reverseImageUri) {
-      persistedReverse = await imageStorage.persistImage(reverseImageUri, 'reverse');
+      revProcessed = await imageProcessor.processAndPersist(reverseImageUri, 'reverse');
+      persistedReverse = revProcessed.originalPath;
     }
 
     // 2. Find existing CoinType or create new classified entity
@@ -144,6 +150,50 @@ export class SpecimenIngestionService {
       notes: specimenInput.notes?.trim() || null,
       is_favorite: specimenInput.is_favorite ?? 0,
     });
+
+    // 4. Save structured multi-tier image records into coin_images table
+    const db = getDatabase();
+    const nowIso = new Date().toISOString();
+
+    if (obvProcessed) {
+      db.runSync(
+        `INSERT INTO coin_images (id, specimen_id, image_path, image_side, original_image_path, image_metadata, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        [
+          `img-obv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          specimen.id,
+          obvProcessed.thumbnailPath,
+          'obverse',
+          obvProcessed.originalPath,
+          JSON.stringify({
+            width: obvProcessed.width,
+            height: obvProcessed.height,
+            inferencePath: obvProcessed.inferencePath,
+          }),
+          nowIso,
+        ]
+      );
+    }
+
+    if (revProcessed) {
+      db.runSync(
+        `INSERT INTO coin_images (id, specimen_id, image_path, image_side, original_image_path, image_metadata, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        [
+          `img-rev-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          specimen.id,
+          revProcessed.thumbnailPath,
+          'reverse',
+          revProcessed.originalPath,
+          JSON.stringify({
+            width: revProcessed.width,
+            height: revProcessed.height,
+            inferencePath: revProcessed.inferencePath,
+          }),
+          nowIso,
+        ]
+      );
+    }
 
     // 4. Assign Tags if specified
     if (specimenInput.tagIds && specimenInput.tagIds.length > 0) {

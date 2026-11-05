@@ -7,6 +7,14 @@ export type ThemeMode = 'dark' | 'light';
 export type GradingStandard = 'sheldon_70' | 'european' | 'adjectival';
 export type AIProviderType = 'mock' | 'gemini';
 
+export interface SpotPricesPerGram {
+  gold: number;
+  silver: number;
+  platinum: number;
+  palladium: number;
+  copper: number;
+}
+
 export interface SettingsState {
   currency: Currency;
   currencySymbol: string;
@@ -17,6 +25,7 @@ export interface SettingsState {
   geminiApiKey: string;
   hasSeenOnboarding: boolean;
   isKeyLoaded: boolean;
+  spotPrices: SpotPricesPerGram;
 
   setCurrency: (currency: Currency) => void;
   setUnitSystem: (unitSystem: UnitSystem) => void;
@@ -24,6 +33,7 @@ export interface SettingsState {
   setDefaultGradingSystem: (standard: GradingStandard) => void;
   setAIProvider: (provider: AIProviderType) => void;
   setGeminiApiKey: (key: string) => Promise<void>;
+  setSpotPrice: (metal: keyof SpotPricesPerGram, pricePerGram: number) => void;
   loadSecureSettings: () => Promise<void>;
   formatPrice: (amount: number | null | undefined) => string;
 }
@@ -39,6 +49,14 @@ const CURRENCY_SYMBOLS: Record<Currency, string> = {
   CHF: 'CHF ',
 };
 
+export const DEFAULT_SPOT_PRICES: SpotPricesPerGram = {
+  gold: 85.0,     // ~$2640 / troy oz
+  silver: 1.05,   // ~$32.60 / troy oz
+  platinum: 31.0,
+  palladium: 33.0,
+  copper: 0.01,
+};
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   currency: 'USD',
   currencySymbol: '$',
@@ -49,6 +67,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   geminiApiKey: '',
   hasSeenOnboarding: true,
   isKeyLoaded: false,
+  spotPrices: { ...DEFAULT_SPOT_PRICES },
 
   setCurrency: (currency: Currency) => {
     set({ currency, currencySymbol: CURRENCY_SYMBOLS[currency] || '$' });
@@ -70,6 +89,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch (err) {
       console.warn('Failed to persist Gemini API key to secure storage:', err);
     }
+  },
+
+  setSpotPrice: (metal, pricePerGram) => {
+    set((state) => ({
+      spotPrices: {
+        ...state.spotPrices,
+        [metal]: Math.max(0, pricePerGram),
+      },
+    }));
   },
 
   loadSecureSettings: async () => {
