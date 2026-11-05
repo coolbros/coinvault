@@ -1,7 +1,9 @@
 import { create } from 'zustand';
-import { Specimen, Tag } from '../db/schema';
+import { Specimen, Tag, ValuationRecord, ConditionAssessment } from '../db/schema';
 import { specimenRepository, SpecimenFilterOptions, CollectionStatistics } from '../db/repositories/specimenRepository';
 import { tagRepository } from '../db/repositories/tagRepository';
+import { valuationRepository } from '../db/repositories/valuationRepository';
+import { conditionRepository } from '../db/repositories/conditionRepository';
 
 export interface CollectionState {
   specimens: Specimen[];
@@ -31,6 +33,9 @@ export interface CollectionState {
   loadTags: () => void;
   refreshStatistics: () => void;
   selectSpecimen: (id: string | null) => void;
+  getSpecimenById: (id: string) => Specimen | null;
+  getSpecimenHistory: (id: string) => { valuations: ValuationRecord[]; conditions: ConditionAssessment[] };
+  updateSpecimenDetails: (id: string, updates: Partial<Specimen>) => Specimen | null;
   setViewMode: (mode: 'grid' | 'list') => void;
   setSearchQuery: (query: string) => void;
   setFilters: (filters: Partial<SpecimenFilterOptions>) => void;
@@ -132,6 +137,29 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }
     const specimen = specimenRepository.getById(id);
     set({ selectedSpecimen: specimen });
+  },
+
+  getSpecimenById: (id: string) => {
+    const specimen = specimenRepository.getById(id);
+    if (specimen) {
+      set({ selectedSpecimen: specimen });
+    }
+    return specimen;
+  },
+
+  getSpecimenHistory: (id: string) => {
+    const valuations = valuationRepository.getHistoryForSpecimen(id);
+    const conditions = conditionRepository.getHistoryForSpecimen(id);
+    return { valuations, conditions };
+  },
+
+  updateSpecimenDetails: (id: string, updates: Partial<Specimen>) => {
+    const updated = specimenRepository.update(id, updates);
+    if (updated) {
+      set({ selectedSpecimen: updated });
+      get().loadSpecimens();
+    }
+    return updated;
   },
 
   setViewMode: (viewMode: 'grid' | 'list') => set({ viewMode }),

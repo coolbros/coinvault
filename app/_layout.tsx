@@ -7,6 +7,7 @@ import { initializeDatabase } from '../src/db/client';
 import { Colors } from '../src/constants/theme';
 import { useSettingsStore } from '../src/stores/settingsStore';
 import { useCollectionStore } from '../src/stores/collectionStore';
+import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
@@ -20,6 +21,7 @@ export default function RootLayout() {
       initializeDatabase();
       loadSpecimens();
       loadTags();
+      useSettingsStore.getState().loadSecureSettings();
       setIsReady(true);
     } catch (err) {
       console.error('Failed to initialize database:', err);
@@ -39,7 +41,8 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StatusBar style={themeMode === 'light' ? 'dark' : 'light'} />
-      <Stack
+      <ErrorBoundary>
+        <Stack
         screenOptions={{
           headerStyle: {
             backgroundColor: Colors.dark.surface,
@@ -98,6 +101,7 @@ export default function RootLayout() {
           }}
         />
       </Stack>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

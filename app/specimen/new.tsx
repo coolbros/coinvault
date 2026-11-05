@@ -15,13 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography, BorderRadius } from '../../src/constants/theme';
 import { useCollectionStore } from '../../src/stores/collectionStore';
 import { useSettingsStore } from '../../src/stores/settingsStore';
-import { coinTypeRepository } from '../../src/db/repositories/coinTypeRepository';
-import { specimenRepository } from '../../src/db/repositories/specimenRepository';
-import { valuationRepository } from '../../src/db/repositories/valuationRepository';
-import { conditionRepository } from '../../src/db/repositories/conditionRepository';
-import { imageStorage } from '../../src/services/storage/imageStorage';
-import { valuationEngine } from '../../src/services/valuation/valuationEngine';
-import { coinGradingService } from '../../src/services/ai/gradingProvider';
+import { specimenIngestionService } from '../../src/services/specimen/specimenIngestionService';
 import { Card } from '../../src/components/Card';
 import { Button } from '../../src/components/Button';
 
@@ -84,83 +78,30 @@ export default function NewSpecimenScreen() {
       const yearNum = year.trim() ? parseInt(year.trim(), 10) : null;
       const priceNum = price.trim() ? parseFloat(price.trim()) : null;
 
-      // 1. Persist photos
-      let persistedObv: string | null = null;
-      let persistedRev: string | null = null;
-      if (obverseUri) persistedObv = await imageStorage.persistImage(obverseUri, 'obverse');
-      if (reverseUri) persistedRev = await imageStorage.persistImage(reverseUri, 'reverse');
-
-      // 2. Find or create CoinType
-      const coinType = coinTypeRepository.findOrCreate({
-        country: country.trim(),
-        denomination: denomination.trim(),
-        year_start: yearNum,
-        year_end: yearNum,
-        metal: metal.trim() || null,
-        mint: mint.trim() || null,
-        ruler: ruler.trim() || null,
-        coin_series: series.trim() || null,
-        is_reference_type: 0,
-      });
-
-      // 3. Create Specimen
-      const specimen = specimenRepository.create({
-        coin_type_id: coinType.id,
-        custom_name: `${coinType.country} ${coinType.denomination} (${yearNum || 'Undated'})`,
-        obverse_image_path: persistedObv,
-        reverse_image_path: persistedRev,
-        acquisition_date: new Date().toISOString().split('T')[0],
-        acquisition_price: priceNum,
-        acquisition_currency: currency,
-        acquisition_source: source.trim() || 'Manual Entry',
-        user_grade: grade.trim() || 'VF20',
-        notes: notes.trim() || null,
-      });
-
-      // 4. Run automated condition & valuation
-      const valRes = await valuationEngine.estimate({
-        coinType: coinType.denomination,
-        country: coinType.country,
-        denomination: coinType.denomination,
-        year: yearNum,
-        metal: coinType.metal,
-        grade: specimen.user_grade,
-        currency,
-      });
-
-      valuationRepository.create({
-        specimen_id: specimen.id,
-        estimated_value_min: valRes.estimatedValueMin,
-        estimated_value_max: valRes.estimatedValueMax,
-        currency: valRes.currency,
-        valuation_type: valRes.valuationType,
-        source: valRes.source,
-        comparable_sales: valRes.comparableSales,
-        confidence: valRes.confidence,
-        valuation_date: valRes.valuationDate,
-        notes: valRes.caveats[0],
-      });
-
-      const condRes = await coinGradingService.assess({
-        obverseImageUri: persistedObv || '',
-        reverseImageUri: persistedRev || '',
-        coinType: coinType.denomination,
-        year: yearNum,
-        metal: coinType.metal,
-      });
-
-      conditionRepository.create({
-        specimen_id: specimen.id,
-        grading_system: condRes.gradingSystem,
-        estimated_grade: specimen.user_grade || condRes.estimatedGrade,
-        estimated_grade_min: condRes.estimatedGradeMin,
-        estimated_grade_max: condRes.estimatedGradeMax,
-        numerical_grade_min: condRes.numericalGradeMin,
-        numerical_grade_max: condRes.numericalGradeMax,
-        observations: condRes.observations,
-        confidence: condRes.confidence,
-        assessment_provider: condRes.explanation,
-        explanation: condRes.explanation,
+      const specimen = await specimenIngestionService.ingest({
+        obverseImageUri: obverseUri || null,
+        reverseImageUri: reverseUri || null,
+        coinType: {
+          country: country.trim(),
+          denomination: denomination.trim(),
+          year_start: yearNum,
+          year_end: yearNum,
+          metal: metal.trim() || null,
+          mint: mint.trim() || null,
+          ruler: ruler.trim() || null,
+          coin_series: series.trim() || null,
+          is_reference_type: 0,
+        },
+        specimen: {
+          custom_name: `${country.trim()} ${denomination.trim()} (${yearNum || 'Undated'})`,
+          user_grade: grade.trim() || 'VF20',
+          acquisition_price: priceNum,
+          acquisition_currency: currency,
+          acquisition_source: source.trim() || 'Manual Entry',
+          notes: notes.trim() || null,
+        },
+        runGrading: true,
+        runValuation: true,
       });
 
       loadSpecimens();

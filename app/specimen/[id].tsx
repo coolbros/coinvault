@@ -13,9 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography, BorderRadius } from '../../src/constants/theme';
 import { useCollectionStore } from '../../src/stores/collectionStore';
 import { useSettingsStore } from '../../src/stores/settingsStore';
-import { specimenRepository } from '../../src/db/repositories/specimenRepository';
-import { valuationRepository } from '../../src/db/repositories/valuationRepository';
-import { conditionRepository } from '../../src/db/repositories/conditionRepository';
 import { Specimen, ValuationRecord, ConditionAssessment } from '../../src/db/schema';
 import { Card } from '../../src/components/Card';
 import { Button } from '../../src/components/Button';
@@ -35,14 +32,17 @@ export default function SpecimenDetailScreen() {
   const toggleFavorite = useCollectionStore((s) => s.toggleFavorite);
   const deleteSpecimen = useCollectionStore((s) => s.deleteSpecimen);
   const duplicateSpecimen = useCollectionStore((s) => s.duplicateSpecimen);
+  const getSpecimenById = useCollectionStore((s) => s.getSpecimenById);
+  const getSpecimenHistory = useCollectionStore((s) => s.getSpecimenHistory);
 
   const loadData = () => {
     if (!id) return;
-    const s = specimenRepository.getById(id);
+    const s = getSpecimenById(id);
     setSpecimen(s);
     if (s) {
-      setValuationHistory(valuationRepository.getHistoryForSpecimen(s.id));
-      setConditionHistory(conditionRepository.getHistoryForSpecimen(s.id));
+      const history = getSpecimenHistory(s.id);
+      setValuationHistory(history.valuations);
+      setConditionHistory(history.conditions);
     }
   };
 

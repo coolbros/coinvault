@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Colors, Spacing, Typography, BorderRadius } from '../../../src/constants/theme';
-import { specimenRepository } from '../../../src/db/repositories/specimenRepository';
 import { useCollectionStore } from '../../../src/stores/collectionStore';
 import { useSettingsStore } from '../../../src/stores/settingsStore';
 import { Card } from '../../../src/components/Card';
@@ -19,7 +18,8 @@ import { Specimen } from '../../../src/db/schema';
 export default function EditSpecimenScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const loadSpecimens = useCollectionStore((s) => s.loadSpecimens);
+  const getSpecimenById = useCollectionStore((s) => s.getSpecimenById);
+  const updateSpecimenDetails = useCollectionStore((s) => s.updateSpecimenDetails);
   const currencySymbol = useSettingsStore((s) => s.currencySymbol);
 
   const [specimen, setSpecimen] = useState<Specimen | null>(null);
@@ -35,7 +35,7 @@ export default function EditSpecimenScreen() {
 
   useEffect(() => {
     if (!id) return;
-    const s = specimenRepository.getById(id);
+    const s = getSpecimenById(id);
     if (s) {
       setSpecimen(s);
       setCustomName(s.custom_name || '');
@@ -62,7 +62,7 @@ export default function EditSpecimenScreen() {
     try {
       const priceNum = price.trim() ? parseFloat(price.trim()) : null;
 
-      specimenRepository.update(specimen.id, {
+      updateSpecimenDetails(specimen.id, {
         custom_name: customName.trim() || null,
         user_grade: grade.trim() || null,
         grading_service: service.trim() || 'Raw',
@@ -73,7 +73,6 @@ export default function EditSpecimenScreen() {
         notes: notes.trim() || null,
       });
 
-      loadSpecimens();
       Alert.alert('Updated', 'Specimen record updated successfully.', [
         { text: 'OK', onPress: () => router.back() },
       ]);

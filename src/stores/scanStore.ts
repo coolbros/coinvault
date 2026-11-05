@@ -5,14 +5,7 @@ import { imageQualityService } from '../services/ai/imageQuality';
 import { mockIdentificationProvider } from '../services/ai/mockProvider';
 import { GeminiCoinIdentificationProvider } from '../services/ai/geminiProvider';
 import { useSettingsStore } from './settingsStore';
-import { coinTypeRepository } from '../db/repositories/coinTypeRepository';
-import { specimenRepository } from '../db/repositories/specimenRepository';
-import { valuationRepository } from '../db/repositories/valuationRepository';
-import { conditionRepository } from '../db/repositories/conditionRepository';
-import { identificationRepository } from '../db/repositories/identificationRepository';
-import { imageStorage } from '../services/storage/imageStorage';
-import { valuationEngine } from '../services/valuation/valuationEngine';
-import { coinGradingService } from '../services/ai/gradingProvider';
+import { specimenIngestionService } from '../services/specimen/specimenIngestionService';
 import { Specimen } from '../db/schema';
 
 export type ScanStep =
@@ -160,108 +153,21 @@ export const useScanStore = create<ScanState>((set, get) => ({
     if (!obverseImageUri) return null;
 
     try {
-      // 1. Copy photos to persistent storage
-      const persistedObverse = await imageStorage.persistImage(obverseImageUri, 'obverse');
-      const persistedReverse = reverseImageUri
-        ? await imageStorage.persistImage(reverseImageUri, 'reverse')
-        : null;
+      const providerName =
+        useSettingsStore.getState().aiProvider === 'gemini'
+          ? 'Gemini 2.5 Flash'
+          : 'Mock Numismatic Engine';
 
-      // 2. Find or create CoinType
-      const coinType = coinTypeRepository.findOrCreate({
-        country: editableAttributes.country || 'Unknown',
-        denomination: editableAttributes.denomination || 'Unknown',
-        year_start: editableAttributes.year || editableAttributes.year_start || null,
-        year_end: editableAttributes.year || editableAttributes.year_end || null,
-        ruler: editableAttributes.ruler ?? null,
-        mint: editableAttributes.mint ?? null,
-        metal: editableAttributes.metal ?? null,
-        coin_series: editableAttributes.coin_series ?? null,
-        historical_period: editableAttributes.historical_period ?? null,
-        catalog_references: editableAttributes.catalog_references || [],
-        obverse_description: editableAttributes.obverse_description ?? null,
-        reverse_description: editableAttributes.reverse_description ?? null,
-        shape: editableAttributes.shape || 'Round',
-        edge_type: editableAttributes.edge_type || 'Reeded',
-        diameter_mm: editableAttributes.diameter_mm ?? null,
-        weight_g: editableAttributes.weight_g ?? null,
-        is_reference_type: 0,
-      });
-
-      // 3. Create Specimen
-      const specimen = specimenRepository.create({
-        coin_type_id: coinType.id,
-        custom_name: editableAttributes.coin_type || `${coinType.country} ${coinType.denomination}`,
-        obverse_image_path: persistedObverse,
-        reverse_image_path: persistedReverse,
-        acquisition_date: new Date().toISOString().split('T')[0],
-        acquisition_price: purchasePrice ?? null,
-        acquisition_currency: useSettingsStore.getState().currency,
-        acquisition_source: 'AI Scan & Attribution',
-        user_grade: userGrade || 'AU50',
-        notes: notes || editableAttributes.numismatic_notes || null,
-      });
-
-      // 4. Save Identification Record
-      if (identificationResult) {
-        identificationRepository.create({
-          specimen_id: specimen.id,
-          model_provider: useSettingsStore.getState().aiProvider === 'gemini' ? 'Gemini 2.5 Flash' : 'Mock Numismatic Engine',
-          model_version: '1.0.0',
-          normalized_result: editableAttributes,
-          confidence_scores: identificationResult.confidence,
-          alternative_identifications: identificationResult.alternative_identifications,
-          uncertain_attributes: identificationResult.uncertain_attributes,
-          user_confirmed: 1,
-        });
-      }
-
-      // 5. Generate initial condition assessment
-      const conditionRes = await coinGradingService.assess({
-        obverseImageUri: persistedObverse,
-        reverseImageUri: persistedReverse,
-        coinType: coinType.denomination,
-        year: coinType.year_start,
-        metal: coinType.metal,
-      });
-
-      conditionRepository.create({
-        specimen_id: specimen.id,
-        grading_system: conditionRes.gradingSystem,
-        estimated_grade: conditionRes.estimatedGrade,
-        estimated_grade_min: conditionRes.estimatedGradeMin,
-        estimated_grade_max: conditionRes.estimatedGradeMax,
-        numerical_grade_min: conditionRes.numericalGradeMin,
-        numerical_grade_max: conditionRes.numericalGradeMax,
-        observations: conditionRes.observations,
-        confidence: conditionRes.confidence,
-        assessment_provider: coinGradingService.providerName,
-        explanation: conditionRes.explanation,
-      });
-
-      // 6. Generate initial valuation
-      const valRes = await valuationEngine.estimate({
-        coinType: coinType.denomination,
-        country: coinType.country,
-        denomination: coinType.denomination,
-        year: coinType.year_start,
-        metal: coinType.metal,
-        weightG: coinType.weight_g,
-        grade: specimen.user_grade,
-        currency: useSettingsStore.getState().currency,
-      });
-
-      valuationRepository.create({
-        specimen_id: specimen.id,
-        estimated_value_min: valRes.estimatedValueMin,
-        estimated_value_max: valRes.estimatedValueMax,
-        currency: valRes.currency,
-        valuation_type: valRes.valuationType,
-        source: valRes.source,
-        comparable_sales: valRes.comparableSales,
-        confidence: valRes.confidence,
-        valuation_date: valRes.valuationDate,
-        notes: valRes.caveats[0],
-      });
+      const specimen = await specimenIngestionService.ingestFromScanResult(
+        obverseImageUri,
+        reverseImageUri,
+        editableAttributes,
+        identificationResult,
+        userGrade,
+        purchasePrice,
+        notes,
+        providerName
+      );
 
       get().clearScan();
       return specimen;
@@ -277,27 +183,11 @@ export const useScanStore = create<ScanState>((set, get) => ({
     if (!obverseImageUri) return null;
 
     try {
-      const persistedObverse = await imageStorage.persistImage(obverseImageUri, 'obverse');
-      const persistedReverse = reverseImageUri
-        ? await imageStorage.persistImage(reverseImageUri, 'reverse')
-        : null;
-
-      const unkType = coinTypeRepository.findOrCreate({
-        country: 'Unidentified Country',
-        denomination: 'Unknown Specimen',
-        is_reference_type: 0,
-      });
-
-      const specimen = specimenRepository.create({
-        coin_type_id: unkType.id,
-        custom_name: 'Unidentified Coin Specimen',
-        obverse_image_path: persistedObverse,
-        reverse_image_path: persistedReverse,
-        acquisition_date: new Date().toISOString().split('T')[0],
-        acquisition_currency: useSettingsStore.getState().currency,
-        acquisition_source: 'Unidentified Scan',
-        notes: notes || 'Photographed for future research & identification.',
-      });
+      const specimen = await specimenIngestionService.ingestUnidentified(
+        obverseImageUri,
+        reverseImageUri,
+        notes
+      );
 
       get().clearScan();
       return specimen;

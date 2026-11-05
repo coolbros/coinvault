@@ -1,5 +1,6 @@
 import { SCHEMA_SQL } from './schema';
 import { SEED_COIN_TYPES, SEED_TAGS } from './seedData';
+import { runMigrations } from './migrations';
 
 export interface DatabaseAdapter {
   execSync: (sql: string) => void;
@@ -99,9 +100,8 @@ export function initializeDatabase(): DatabaseAdapter {
 
   const db = getDatabase();
 
-  // Execute schema creation
-  db.execSync('PRAGMA foreign_keys = ON;');
-  db.execSync(SCHEMA_SQL);
+  // Run versioned migrations (uses PRAGMA user_version)
+  runMigrations(db);
 
   // Seed reference data if coin_types table is empty or missing reference types
   seedReferenceData(db);
