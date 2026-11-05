@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,215 @@ import { CoinAvatar } from '../../src/components/CoinAvatar';
 import { Badge } from '../../src/components/Badge';
 import { Button } from '../../src/components/Button';
 import { Specimen } from '../../src/db/schema';
+
+const GridCoinCard = memo(function GridCoinCard({
+  item,
+  isSelected,
+  isMultiSelectMode,
+  formatPrice,
+  onPress,
+  onLongPress,
+  onToggleFavorite,
+}: {
+  item: Specimen;
+  isSelected: boolean;
+  isMultiSelectMode: boolean;
+  formatPrice: (amount: number | null | undefined) => string;
+  onPress: () => void;
+  onLongPress: () => void;
+  onToggleFavorite: () => void;
+}) {
+  const ct = item.coin_type;
+  const val = item.latest_valuation;
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.gridCard,
+        isSelected && styles.selectedBorder,
+      ]}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      activeOpacity={0.8}
+    >
+      {isMultiSelectMode && (
+        <View style={styles.checkboxContainer}>
+          <Ionicons
+            name={isSelected ? 'checkbox' : 'square-outline'}
+            size={20}
+            color={isSelected ? Colors.dark.primary : Colors.dark.textMuted}
+          />
+        </View>
+      )}
+
+      <TouchableOpacity
+        style={styles.favIconWrapper}
+        onPress={onToggleFavorite}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons
+          name={item.is_favorite === 1 ? 'heart' : 'heart-outline'}
+          size={18}
+          color={item.is_favorite === 1 ? '#E74C3C' : Colors.dark.textMuted}
+        />
+      </TouchableOpacity>
+
+      <CoinAvatar
+        obverseUri={item.obverse_image_path}
+        reverseUri={item.reverse_image_path}
+        metal={ct?.metal}
+        denomination={ct?.denomination}
+        year={ct?.year_start}
+        size={76}
+        style={styles.avatarMargin}
+      />
+
+      <Text style={styles.gridDenom} numberOfLines={1}>
+        {ct?.denomination || 'Coin Specimen'}
+      </Text>
+      <Text style={styles.gridCountry} numberOfLines={1}>
+        {ct?.country || 'Unknown'} {ct?.year_start ? `• ${ct.year_start > 0 ? ct.year_start : `${Math.abs(ct.year_start)} BCE`}` : ''}
+      </Text>
+
+      <View style={styles.gridBadgeRow}>
+        {item.user_grade ? (
+          <Badge label={item.user_grade} variant="success" size="sm" />
+        ) : null}
+        {ct?.metal ? (
+          <Badge
+            label={ct.metal.split(' ')[0]}
+            variant={
+              ct.metal.toLowerCase().includes('gold')
+                ? 'gold'
+                : ct.metal.toLowerCase().includes('silver')
+                ? 'silver'
+                : 'default'
+            }
+            size="sm"
+          />
+        ) : null}
+      </View>
+
+      <Text style={styles.gridValuation}>
+        {val
+          ? formatPrice(val.estimated_value_max)
+          : item.acquisition_price
+          ? formatPrice(item.acquisition_price)
+          : '—'}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
+const ListCoinCard = memo(function ListCoinCard({
+  item,
+  isSelected,
+  isMultiSelectMode,
+  formatPrice,
+  onPress,
+  onLongPress,
+  onToggleFavorite,
+}: {
+  item: Specimen;
+  isSelected: boolean;
+  isMultiSelectMode: boolean;
+  formatPrice: (amount: number | null | undefined) => string;
+  onPress: () => void;
+  onLongPress: () => void;
+  onToggleFavorite: () => void;
+}) {
+  const ct = item.coin_type;
+  const val = item.latest_valuation;
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.listCard,
+        isSelected && styles.selectedBorder,
+      ]}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      activeOpacity={0.8}
+    >
+      {isMultiSelectMode && (
+        <View style={{ marginRight: 10 }}>
+          <Ionicons
+            name={isSelected ? 'checkbox' : 'square-outline'}
+            size={22}
+            color={isSelected ? Colors.dark.primary : Colors.dark.textMuted}
+          />
+        </View>
+      )}
+
+      <CoinAvatar
+        obverseUri={item.obverse_image_path}
+        reverseUri={item.reverse_image_path}
+        metal={ct?.metal}
+        denomination={ct?.denomination}
+        year={ct?.year_start}
+        size={56}
+      />
+
+      <View style={styles.listDetails}>
+        <View style={styles.listHeaderRow}>
+          <Text style={styles.listTitle} numberOfLines={1}>
+            {item.custom_name || `${ct?.country} ${ct?.denomination}`}
+          </Text>
+          <TouchableOpacity
+            onPress={onToggleFavorite}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons
+              name={item.is_favorite === 1 ? 'heart' : 'heart-outline'}
+              size={18}
+              color={item.is_favorite === 1 ? '#E74C3C' : Colors.dark.textMuted}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.listSubtitle}>
+          {ct?.country} • {ct?.year_start ? (ct.year_start > 0 ? ct.year_start : `${Math.abs(ct.year_start)} BCE`) : 'Undated'} {ct?.mint ? `• Mint: ${ct.mint}` : ''}
+        </Text>
+
+        <View style={styles.listBadges}>
+          {item.user_grade ? (
+            <Badge label={item.user_grade} variant="success" size="sm" style={{ marginRight: 6 }} />
+          ) : null}
+          {ct?.metal ? (
+            <Badge
+              label={ct.metal}
+              variant={
+                ct.metal.toLowerCase().includes('gold')
+                  ? 'gold'
+                  : ct.metal.toLowerCase().includes('silver')
+                  ? 'silver'
+                  : 'default'
+              }
+              size="sm"
+              style={{ marginRight: 6 }}
+            />
+          ) : null}
+          {item.grading_service && item.grading_service !== 'Raw' ? (
+            <Badge label={item.grading_service} variant="warning" size="sm" />
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.listPriceCol}>
+        <Text style={styles.listPriceText}>
+          {val
+            ? formatPrice(val.estimated_value_max)
+            : item.acquisition_price
+            ? formatPrice(item.acquisition_price)
+            : '—'}
+        </Text>
+        <Text style={styles.listPriceLabel}>
+          {val ? 'EST. VALUE' : 'COST'}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 export default function CollectionScreen() {
   const router = useRouter();
@@ -75,17 +284,13 @@ export default function CollectionScreen() {
     );
   };
 
-  const renderGridItem = ({ item }: { item: Specimen }) => {
-    const ct = item.coin_type;
-    const val = item.latest_valuation;
-    const isSelected = selectedSpecimenIds.includes(item.id);
-
-    return (
-      <TouchableOpacity
-        style={[
-          styles.gridCard,
-          isSelected && styles.selectedBorder,
-        ]}
+  const renderGridItem = useCallback(
+    ({ item }: { item: Specimen }) => (
+      <GridCoinCard
+        item={item}
+        isSelected={selectedSpecimenIds.includes(item.id)}
+        isMultiSelectMode={isMultiSelectMode}
+        formatPrice={formatPrice}
         onPress={() => {
           if (isMultiSelectMode) {
             toggleSelectSpecimenId(item.id);
@@ -99,88 +304,27 @@ export default function CollectionScreen() {
             toggleSelectSpecimenId(item.id);
           }
         }}
-        activeOpacity={0.8}
-      >
-        {isMultiSelectMode && (
-          <View style={styles.checkboxContainer}>
-            <Ionicons
-              name={isSelected ? 'checkbox' : 'square-outline'}
-              size={20}
-              color={isSelected ? Colors.dark.primary : Colors.dark.textMuted}
-            />
-          </View>
-        )}
+        onToggleFavorite={() => toggleFavorite(item.id)}
+      />
+    ),
+    [
+      selectedSpecimenIds,
+      isMultiSelectMode,
+      formatPrice,
+      toggleSelectSpecimenId,
+      toggleMultiSelectMode,
+      toggleFavorite,
+      router,
+    ]
+  );
 
-        <TouchableOpacity
-          style={styles.favIconWrapper}
-          onPress={() => toggleFavorite(item.id)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons
-            name={item.is_favorite === 1 ? 'heart' : 'heart-outline'}
-            size={18}
-            color={item.is_favorite === 1 ? '#E74C3C' : Colors.dark.textMuted}
-          />
-        </TouchableOpacity>
-
-        <CoinAvatar
-          obverseUri={item.obverse_image_path}
-          reverseUri={item.reverse_image_path}
-          metal={ct?.metal}
-          denomination={ct?.denomination}
-          year={ct?.year_start}
-          size={76}
-          style={styles.avatarMargin}
-        />
-
-        <Text style={styles.gridDenom} numberOfLines={1}>
-          {ct?.denomination || 'Coin Specimen'}
-        </Text>
-        <Text style={styles.gridCountry} numberOfLines={1}>
-          {ct?.country || 'Unknown'} {ct?.year_start ? `• ${ct.year_start > 0 ? ct.year_start : `${Math.abs(ct.year_start)} BCE`}` : ''}
-        </Text>
-
-        <View style={styles.gridBadgeRow}>
-          {item.user_grade ? (
-            <Badge label={item.user_grade} variant="success" size="sm" />
-          ) : null}
-          {ct?.metal ? (
-            <Badge
-              label={ct.metal.split(' ')[0]}
-              variant={
-                ct.metal.toLowerCase().includes('gold')
-                  ? 'gold'
-                  : ct.metal.toLowerCase().includes('silver')
-                  ? 'silver'
-                  : 'default'
-              }
-              size="sm"
-            />
-          ) : null}
-        </View>
-
-        <Text style={styles.gridValuation}>
-          {val
-            ? formatPrice(val.estimated_value_max)
-            : item.acquisition_price
-            ? formatPrice(item.acquisition_price)
-            : '—'}
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderListItem = ({ item }: { item: Specimen }) => {
-    const ct = item.coin_type;
-    const val = item.latest_valuation;
-    const isSelected = selectedSpecimenIds.includes(item.id);
-
-    return (
-      <TouchableOpacity
-        style={[
-          styles.listCard,
-          isSelected && styles.selectedBorder,
-        ]}
+  const renderListItem = useCallback(
+    ({ item }: { item: Specimen }) => (
+      <ListCoinCard
+        item={item}
+        isSelected={selectedSpecimenIds.includes(item.id)}
+        isMultiSelectMode={isMultiSelectMode}
+        formatPrice={formatPrice}
         onPress={() => {
           if (isMultiSelectMode) {
             toggleSelectSpecimenId(item.id);
@@ -194,87 +338,19 @@ export default function CollectionScreen() {
             toggleSelectSpecimenId(item.id);
           }
         }}
-        activeOpacity={0.8}
-      >
-        {isMultiSelectMode && (
-          <View style={{ marginRight: 10 }}>
-            <Ionicons
-              name={isSelected ? 'checkbox' : 'square-outline'}
-              size={22}
-              color={isSelected ? Colors.dark.primary : Colors.dark.textMuted}
-            />
-          </View>
-        )}
-
-        <CoinAvatar
-          obverseUri={item.obverse_image_path}
-          reverseUri={item.reverse_image_path}
-          metal={ct?.metal}
-          denomination={ct?.denomination}
-          year={ct?.year_start}
-          size={56}
-        />
-
-        <View style={styles.listDetails}>
-          <View style={styles.listHeaderRow}>
-            <Text style={styles.listTitle} numberOfLines={1}>
-              {item.custom_name || `${ct?.country} ${ct?.denomination}`}
-            </Text>
-            <TouchableOpacity
-              onPress={() => toggleFavorite(item.id)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons
-                name={item.is_favorite === 1 ? 'heart' : 'heart-outline'}
-                size={18}
-                color={item.is_favorite === 1 ? '#E74C3C' : Colors.dark.textMuted}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.listSubtitle}>
-            {ct?.country} • {ct?.year_start ? (ct.year_start > 0 ? ct.year_start : `${Math.abs(ct.year_start)} BCE`) : 'Undated'} {ct?.mint ? `• Mint: ${ct.mint}` : ''}
-          </Text>
-
-          <View style={styles.listBadges}>
-            {item.user_grade ? (
-              <Badge label={item.user_grade} variant="success" size="sm" style={{ marginRight: 6 }} />
-            ) : null}
-            {ct?.metal ? (
-              <Badge
-                label={ct.metal}
-                variant={
-                  ct.metal.toLowerCase().includes('gold')
-                    ? 'gold'
-                    : ct.metal.toLowerCase().includes('silver')
-                    ? 'silver'
-                    : 'default'
-                }
-                size="sm"
-                style={{ marginRight: 6 }}
-              />
-            ) : null}
-            {item.grading_service && item.grading_service !== 'Raw' ? (
-              <Badge label={item.grading_service} variant="warning" size="sm" />
-            ) : null}
-          </View>
-        </View>
-
-        <View style={styles.listPriceCol}>
-          <Text style={styles.listPriceText}>
-            {val
-              ? formatPrice(val.estimated_value_max)
-              : item.acquisition_price
-              ? formatPrice(item.acquisition_price)
-              : '—'}
-          </Text>
-          <Text style={styles.listPriceLabel}>
-            {val ? 'EST. VALUE' : 'COST'}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+        onToggleFavorite={() => toggleFavorite(item.id)}
+      />
+    ),
+    [
+      selectedSpecimenIds,
+      isMultiSelectMode,
+      formatPrice,
+      toggleSelectSpecimenId,
+      toggleMultiSelectMode,
+      toggleFavorite,
+      router,
+    ]
+  );
 
   return (
     <View style={styles.container}>
@@ -387,6 +463,10 @@ export default function CollectionScreen() {
         contentContainerStyle={styles.listContent}
         onRefresh={loadSpecimens}
         refreshing={false}
+        initialNumToRender={8}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews={true}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="albums-outline" size={56} color={Colors.dark.textMuted} />

@@ -1,4 +1,5 @@
-import { resetDatabaseForTesting, getDatabase } from '../db/client';
+import { resetDatabaseForTesting } from '../db/nodeAdapter';
+import { getDatabase } from '../db/client';
 import { specimenIngestionService } from '../services/specimen/specimenIngestionService';
 import { specimenRepository } from '../db/repositories/specimenRepository';
 import { coinTypeRepository } from '../db/repositories/coinTypeRepository';

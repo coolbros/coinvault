@@ -318,12 +318,13 @@ export const specimenRepository = {
              v.estimated_value_min, v.estimated_value_max
       FROM specimens s
       JOIN coin_types ct ON s.coin_type_id = ct.id
-      LEFT JOIN (
-        SELECT specimen_id, estimated_value_min, estimated_value_max
-        FROM valuation_records
-        GROUP BY specimen_id
-        HAVING MAX(valuation_date)
-      ) v ON s.id = v.specimen_id
+      LEFT JOIN valuation_records v ON v.id = (
+        SELECT vr2.id
+        FROM valuation_records vr2
+        WHERE vr2.specimen_id = s.id
+        ORDER BY vr2.valuation_date DESC
+        LIMIT 1
+      )
     `;
 
     const whereClauses: string[] = [];
@@ -462,15 +463,17 @@ export const specimenRepository = {
       FROM specimens;
     `) || { total_specimens: 0, unique_types: 0, total_cost: 0 };
 
-    // 2. Total estimated value from latest valuations
+    // 2. Total estimated value from latest valuations (optimized via composite index)
     const valueStat = db.getFirstSync<{ total_value: number }>(`
       SELECT SUM((v.estimated_value_min + v.estimated_value_max) / 2.0) as total_value
-      FROM (
-        SELECT specimen_id, estimated_value_min, estimated_value_max
-        FROM valuation_records
-        GROUP BY specimen_id
-        HAVING MAX(valuation_date)
-      ) v;
+      FROM specimens s
+      JOIN valuation_records v ON v.id = (
+        SELECT vr2.id
+        FROM valuation_records vr2
+        WHERE vr2.specimen_id = s.id
+        ORDER BY vr2.valuation_date DESC
+        LIMIT 1
+      );
     `);
 
     // 3. Country distribution

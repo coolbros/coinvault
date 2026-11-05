@@ -1,4 +1,5 @@
-import { resetDatabaseForTesting, getDatabase } from '../db/client';
+import { resetDatabaseForTesting } from '../db/nodeAdapter';
+import { getDatabase } from '../db/client';
 import { runMigrations, getUserVersion, setUserVersion, MIGRATIONS } from '../db/migrations';
 
 describe('Database Migrations with PRAGMA user_version', () => {

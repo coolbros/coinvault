@@ -139,6 +139,16 @@ Tests run against an in-memory SQLite database (`better-sqlite3`), verifying rea
 
 ---
 
+## Architecture & Technical Documentation
+
+For in-depth architectural and implementation documentation:
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Architectural layers, unified specimen ingestion service, synchronous SQLite profiling, collection virtualization, and security models.
+- [DATA_MODEL.md](DATA_MODEL.md) — Relational database schema, `CoinType` vs `Specimen` design, foreign keys, cascade rules, and composite indexes.
+- [AI_PIPELINE.md](AI_PIPELINE.md) — Dual-tier image processing, multi-dimensional quality heuristics, Google Gemini multimodal vision integration, error classification, and valuation models.
+
+---
+
 ## License
 
 MIT
